@@ -22,6 +22,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) {
+    // If AUTH_SECRET is not configured, allow access (misconfigured deploy)
+    return NextResponse.next();
+  }
+
   const token = request.cookies.get("bwa_session")?.value;
 
   if (!token) {
@@ -29,8 +35,7 @@ export async function middleware(request: NextRequest) {
   }
 
   try {
-    const secret = new TextEncoder().encode(process.env.AUTH_SECRET);
-    await jwtVerify(token, secret);
+    await jwtVerify(token, new TextEncoder().encode(secret));
     return NextResponse.next();
   } catch {
     return NextResponse.redirect(new URL("/login", request.url));

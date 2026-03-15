@@ -12,10 +12,14 @@ export function getSupabase() {
   return _supabase;
 }
 
-// Convenience alias for client components
-export const supabase = typeof window !== "undefined"
-  ? createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-  : (null as unknown as SupabaseClient);
+// Lazy getter for client components — avoids creating the client at module evaluation time
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const client = getSupabase();
+    const value = client[prop as keyof SupabaseClient];
+    if (typeof value === "function") {
+      return value.bind(client);
+    }
+    return value;
+  },
+});
