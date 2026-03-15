@@ -141,15 +141,15 @@ export default function SupplierManagePage() {
             </div>
             <div>
               <p className="text-muted-foreground text-xs mb-1">Discount</p>
-              <p className="font-medium">{supplier.discount_value}{supplier.discount_type === "percentage" ? "%" : "$"}</p>
+              <p className="font-medium">{supplier.discount_type === "percentage" ? `${supplier.discount_value}%` : `$${Number(supplier.discount_value).toFixed(2)}`}</p>
             </div>
             <div>
               <p className="text-muted-foreground text-xs mb-1">Regular Markup</p>
-              <p className="font-medium">{supplier.regular_markup_value}{supplier.regular_markup_type === "percentage" ? "%" : "$"}</p>
+              <p className="font-medium">{supplier.regular_markup_type === "percentage" ? `${supplier.regular_markup_value}%` : `$${Number(supplier.regular_markup_value).toFixed(2)}`}</p>
             </div>
             <div>
               <p className="text-muted-foreground text-xs mb-1">VIP Markup</p>
-              <p className="font-medium">{supplier.vip_markup_value}{supplier.vip_markup_type === "percentage" ? "%" : "$"}</p>
+              <p className="font-medium">{supplier.vip_markup_type === "percentage" ? `${supplier.vip_markup_value}%` : `$${Number(supplier.vip_markup_value).toFixed(2)}`}</p>
             </div>
             <div>
               <p className="text-muted-foreground text-xs mb-1">Column Mapping</p>

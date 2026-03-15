@@ -216,7 +216,7 @@ export default function SupplierForm({ existingSupplier }: SupplierFormProps) {
                   <tbody>
                     {allRawRows.map((row, ri) => (
                       <tr key={ri} className={ri === headerRow - 1 ? "bg-primary/10 font-semibold" : ri % 2 === 1 ? "bg-muted/50" : ""}>
-                        <td className="px-1.5 py-0.5 border-r border-border text-muted-foreground text-[10px]">{ri + 1}</td>
+                        <td className="px-1 py-0.5 border-r border-border text-muted-foreground text-[10px] w-10 min-w-[40px] max-w-[40px] text-center">{ri + 1}</td>
                         {row.map((cell, ci) => (
                           <td key={ci} className="px-1.5 py-0.5 border-b border-border/50 whitespace-nowrap max-w-[150px] truncate">{cell}</td>
                         ))}
@@ -233,8 +233,8 @@ export default function SupplierForm({ existingSupplier }: SupplierFormProps) {
                 <Select value={columnMapping.id || ""} onValueChange={(v) => setColumnMapping((prev) => ({ ...prev, id: v || null }))}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="-- Select column --" /></SelectTrigger>
                   <SelectContent>
-                    {codeOptions.map((h, i) => (
-                      <SelectItem key={h} value={h}>Column {String.fromCharCode(65 + i)} — {h}</SelectItem>
+                    {codeOptions.map((h) => (
+                      <SelectItem key={h} value={h}>{h}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -244,8 +244,8 @@ export default function SupplierForm({ existingSupplier }: SupplierFormProps) {
                 <Select value={columnMapping.cost || ""} onValueChange={(v) => setColumnMapping((prev) => ({ ...prev, cost: v || null }))}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="-- Select column --" /></SelectTrigger>
                   <SelectContent>
-                    {costOptions.map((h, i) => (
-                      <SelectItem key={h} value={h}>Column {String.fromCharCode(65 + i)} — {h}</SelectItem>
+                    {costOptions.map((h) => (
+                      <SelectItem key={h} value={h}>{h}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -289,8 +289,8 @@ export default function SupplierForm({ existingSupplier }: SupplierFormProps) {
               <Select value={discountType} onValueChange={(v) => v && setDiscountType(v as "percentage" | "fixed")}>
                 <SelectTrigger className="mt-1 w-[160px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="percentage">Percentage (%)</SelectItem>
-                  <SelectItem value="fixed">Fixed ($)</SelectItem>
+                  <SelectItem value="percentage">%</SelectItem>
+                  <SelectItem value="fixed">$</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -312,8 +312,8 @@ export default function SupplierForm({ existingSupplier }: SupplierFormProps) {
               <Select value={regularMarkupType} onValueChange={(v) => v && setRegularMarkupType(v as "percentage" | "fixed")}>
                 <SelectTrigger className="mt-1 w-[160px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="percentage">Percentage (%)</SelectItem>
-                  <SelectItem value="fixed">Fixed ($)</SelectItem>
+                  <SelectItem value="percentage">%</SelectItem>
+                  <SelectItem value="fixed">$</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -335,8 +335,8 @@ export default function SupplierForm({ existingSupplier }: SupplierFormProps) {
               <Select value={vipMarkupType} onValueChange={(v) => v && setVipMarkupType(v as "percentage" | "fixed")}>
                 <SelectTrigger className="mt-1 w-[160px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="percentage">Percentage (%)</SelectItem>
-                  <SelectItem value="fixed">Fixed ($)</SelectItem>
+                  <SelectItem value="percentage">%</SelectItem>
+                  <SelectItem value="fixed">$</SelectItem>
                 </SelectContent>
               </Select>
             </div>
