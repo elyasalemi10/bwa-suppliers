@@ -19,27 +19,20 @@ export default function EditSupplierPage() {
         supabase.from("suppliers").select("*").eq("id", id).single(),
         supabase.from("gst_exemption_keywords").select("*").eq("supplier_id", id),
       ]);
-
-      if (supplierRes.error) {
-        setError("Supplier not found.");
-      } else {
-        setSupplier({
-          ...supplierRes.data,
-          gst_exemption_keywords: keywordsRes.data || [],
-        });
-      }
+      if (supplierRes.error) setError("Supplier not found.");
+      else setSupplier({ ...supplierRes.data, gst_exemption_keywords: keywordsRes.data || [] });
       setLoading(false);
     }
     load();
   }, [id]);
 
-  if (loading) return <p className="text-gray-500">Loading...</p>;
-  if (error) return <p className="text-red-600">{error}</p>;
+  if (loading) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (error) return <p className="text-sm text-destructive">{error}</p>;
   if (!supplier) return null;
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Edit Supplier: {supplier.name}</h1>
+      <h1 className="text-lg font-semibold mb-6">Edit Supplier: {supplier.name}</h1>
       <SupplierForm existingSupplier={supplier} />
     </div>
   );

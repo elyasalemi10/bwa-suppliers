@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode } from "react";
-import { ToastProvider } from "./Toast";
+import { Toaster } from "@/components/ui/sonner";
+import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
   { href: "/", label: "Suppliers" },
@@ -16,9 +17,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  // Don't show shell on login page
   if (pathname === "/login") {
-    return <ToastProvider>{children}</ToastProvider>;
+    return (
+      <>
+        {children}
+        <Toaster />
+      </>
+    );
   }
 
   async function handleLogout() {
@@ -28,9 +33,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <ToastProvider>
-      <div className="min-h-screen bg-white">
-        <header className="border-b border-[#E5E5E5]">
+    <>
+      <div className="min-h-screen bg-background">
+        <header className="border-b border-border">
           <div className="max-w-7xl mx-auto px-4 flex items-center justify-between h-14">
             <div className="flex items-center gap-8">
               <Link href="/" className="flex items-center gap-2">
@@ -41,8 +46,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
                   width={32}
                   height={32}
                   className="object-contain"
+                  onError={(e) => { e.currentTarget.style.display = "none"; }}
                 />
-                <span className="font-bold text-[#111] text-sm">BWA Converter</span>
+                <span className="font-semibold text-foreground text-sm">BWA Converter</span>
               </Link>
               <nav className="flex items-center gap-1">
                 {NAV_ITEMS.map((item) => {
@@ -51,31 +57,26 @@ export default function AppShell({ children }: { children: ReactNode }) {
                       ? pathname === "/" || pathname.startsWith("/suppliers")
                       : pathname.startsWith(item.href);
                   return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={`px-3 py-1.5 rounded text-sm transition ${
-                        isActive
-                          ? "bg-[#111] text-white font-bold"
-                          : "text-[#111] hover:bg-[#f5f5f5]"
-                      }`}
-                    >
-                      {item.label}
+                    <Link key={item.href} href={item.href}>
+                      <Button
+                        variant={isActive ? "default" : "ghost"}
+                        size="sm"
+                      >
+                        {item.label}
+                      </Button>
                     </Link>
                   );
                 })}
               </nav>
             </div>
-            <button
-              onClick={handleLogout}
-              className="text-sm text-[#111] hover:underline"
-            >
+            <Button variant="ghost" size="sm" onClick={handleLogout}>
               Logout
-            </button>
+            </Button>
           </div>
         </header>
         <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
       </div>
-    </ToastProvider>
+      <Toaster />
+    </>
   );
 }
