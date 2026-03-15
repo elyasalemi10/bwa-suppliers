@@ -213,25 +213,23 @@ export default function ProcessSheetPage() {
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <Table>
+              <Table className="border-collapse">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-xs">Code</TableHead>
-                    <TableHead className="text-xs">Description</TableHead>
-                    <TableHead className="text-xs text-right">Original</TableHead>
-                    <TableHead className="text-xs">BWA Code</TableHead>
-                    <TableHead className="text-xs text-right">Regular</TableHead>
+                    <TableHead className="text-xs border-r border-border">Code</TableHead>
+                    <TableHead className="text-xs text-right border-r border-border">Original</TableHead>
+                    <TableHead className="text-xs border-r border-border">BWA Code</TableHead>
+                    <TableHead className="text-xs text-right border-r border-border">Regular</TableHead>
                     <TableHead className="text-xs text-right">VIP</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {previewRows.map((row, i) => (
                     <TableRow key={i}>
-                      <TableCell className="text-sm">{row.wholesaler_code}</TableCell>
-                      <TableCell className="text-sm max-w-[250px] truncate">{row.wholesaler_description}</TableCell>
-                      <TableCell className="text-sm text-right">${row.wholesaler_price.toFixed(2)}</TableCell>
-                      <TableCell className="text-sm">{row.bwa_code}</TableCell>
-                      <TableCell className="text-sm text-right">${row.bwa_regular_price.toFixed(2)}</TableCell>
+                      <TableCell className="text-sm border-r border-border">{row.wholesaler_code}</TableCell>
+                      <TableCell className="text-sm text-right border-r border-border">${row.wholesaler_price.toFixed(2)}</TableCell>
+                      <TableCell className="text-sm border-r border-border">{row.bwa_code}</TableCell>
+                      <TableCell className="text-sm text-right border-r border-border">${row.bwa_regular_price.toFixed(2)}</TableCell>
                       <TableCell className="text-sm text-right">${row.bwa_vip_price.toFixed(2)}</TableCell>
                     </TableRow>
                   ))}

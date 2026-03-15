@@ -218,7 +218,7 @@ export default function SupplierForm({ existingSupplier }: SupplierFormProps) {
                       <tr key={ri} className={ri === headerRow - 1 ? "bg-primary/10 font-semibold" : ri % 2 === 1 ? "bg-muted/50" : ""}>
                         <td className="px-1 py-0.5 border-r border-border text-muted-foreground text-[10px] w-10 min-w-[40px] max-w-[40px] text-center">{ri + 1}</td>
                         {row.map((cell, ci) => (
-                          <td key={ci} className="px-1.5 py-0.5 border-b border-border/50 whitespace-nowrap max-w-[150px] truncate">{cell}</td>
+                          <td key={ci} className="px-1.5 py-0.5 border-b border-r border-border/50 whitespace-nowrap max-w-[150px] truncate">{cell}</td>
                         ))}
                       </tr>
                     ))}
@@ -286,13 +286,10 @@ export default function SupplierForm({ existingSupplier }: SupplierFormProps) {
             </div>
             <div>
               <Label>Type</Label>
-              <Select value={discountType} onValueChange={(v) => v && setDiscountType(v as "percentage" | "fixed")}>
-                <SelectTrigger className="mt-1 w-[160px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="percentage">%</SelectItem>
-                  <SelectItem value="fixed">$</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex mt-1">
+                <Button type="button" size="sm" variant={discountType === "percentage" ? "default" : "outline"} className="rounded-r-none" onClick={() => setDiscountType("percentage")}>%</Button>
+                <Button type="button" size="sm" variant={discountType === "fixed" ? "default" : "outline"} className="rounded-l-none" onClick={() => setDiscountType("fixed")}>$</Button>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -309,13 +306,10 @@ export default function SupplierForm({ existingSupplier }: SupplierFormProps) {
             </div>
             <div>
               <Label>Type</Label>
-              <Select value={regularMarkupType} onValueChange={(v) => v && setRegularMarkupType(v as "percentage" | "fixed")}>
-                <SelectTrigger className="mt-1 w-[160px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="percentage">%</SelectItem>
-                  <SelectItem value="fixed">$</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex mt-1">
+                <Button type="button" size="sm" variant={regularMarkupType === "percentage" ? "default" : "outline"} className="rounded-r-none" onClick={() => setRegularMarkupType("percentage")}>%</Button>
+                <Button type="button" size="sm" variant={regularMarkupType === "fixed" ? "default" : "outline"} className="rounded-l-none" onClick={() => setRegularMarkupType("fixed")}>$</Button>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -332,13 +326,10 @@ export default function SupplierForm({ existingSupplier }: SupplierFormProps) {
             </div>
             <div>
               <Label>Type</Label>
-              <Select value={vipMarkupType} onValueChange={(v) => v && setVipMarkupType(v as "percentage" | "fixed")}>
-                <SelectTrigger className="mt-1 w-[160px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="percentage">%</SelectItem>
-                  <SelectItem value="fixed">$</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex mt-1">
+                <Button type="button" size="sm" variant={vipMarkupType === "percentage" ? "default" : "outline"} className="rounded-r-none" onClick={() => setVipMarkupType("percentage")}>%</Button>
+                <Button type="button" size="sm" variant={vipMarkupType === "fixed" ? "default" : "outline"} className="rounded-l-none" onClick={() => setVipMarkupType("fixed")}>$</Button>
+              </div>
             </div>
           </div>
         </CardContent>
