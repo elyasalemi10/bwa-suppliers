@@ -1,24 +1,23 @@
 import * as XLSX from "xlsx";
-import type { ClassifiedProduct, SupplierMarkup, SpecialHandlingSetting, PRICING_TIERS } from "./types";
+import type { ClassifiedProduct, SupplierMarkup, SpecialHandlingSetting } from "./types";
 import { extractSize } from "./source-parser";
 
 const MONEY_FMT = '"$"#,##0.00';
 
-// The 9 pricing tiers in output order
-const TIERS: { key: string; label: string; configField: keyof SupplierMarkup }[] = [
-  { key: "regionalRetail", label: "Regional Retail", configField: "regionalRetailPct" },
-  { key: "regionalTrade", label: "Regional Trade", configField: "regionalTradePct" },
-  { key: "metroRetail", label: "Metro Retail", configField: "metroRetailPct" },
-  { key: "metroTrade", label: "Metro Trade", configField: "metroTradePct" },
-  { key: "regRetailVip", label: "Regional Retail VIP", configField: "regRetailVipPct" },
-  { key: "regTradeVip1", label: "Regional Trade VIP1", configField: "regTradeVip1Pct" },
-  { key: "regTradeVip2", label: "Regional Trade VIP2", configField: "regTradeVip2Pct" },
-  { key: "metroTradeVip1", label: "Metro Trade VIP1", configField: "metroTradeVip1Pct" },
-  { key: "metroTradeVip2", label: "Metro Trade VIP2", configField: "metroTradeVip2Pct" },
+// The 9 pricing tiers in output order, matching done.xlsx exactly
+const TIERS: { key: string; label: string; headerPrefix: string; configField: keyof SupplierMarkup; summaryHeader: string; roundedHeaderOverride?: string }[] = [
+  { key: "regionalRetail", label: "REGIONAL RETAIL", headerPrefix: "REGIONAL RETAIL", configField: "regionalRetailPct", summaryHeader: "Regional Retail AUD Incl" },
+  { key: "regionalTrade", label: "REGIONAL TRADE", headerPrefix: "REGIONAL TRADE", configField: "regionalTradePct", summaryHeader: "Regional Trade AUD Incl" },
+  { key: "metroRetail", label: "METRO RETAIL", headerPrefix: "METRO RETAIL", configField: "metroRetailPct", summaryHeader: "Metro Retail AUD Incl" },
+  { key: "metroTrade", label: "METRO TRADE", headerPrefix: "METRO TRADE", configField: "metroTradePct", summaryHeader: "Metro Trade AUD Incl" },
+  { key: "regRetailVip", label: "REGIONAL RETAIL VIP", headerPrefix: "REGIONAL RETAIL VIP", configField: "regRetailVipPct", summaryHeader: "Regional Retail VIP AUD Inc", roundedHeaderOverride: "REGIONL RETAIL VIP ROUNDED PRICE" },
+  { key: "regTradeVip1", label: "REGIONAL TRADE VIP1", headerPrefix: "REGIONAL TRADE VIP1", configField: "regTradeVip1Pct", summaryHeader: "Regional Trade VIP1 AUD Inc" },
+  { key: "regTradeVip2", label: "REGIONAL TRADE VIP2", headerPrefix: "REGIONAL TRADE VIP2", configField: "regTradeVip2Pct", summaryHeader: "Regional Trade VIP2 AUD Inc" },
+  { key: "metroTradeVip1", label: "METRO TRADE VIP1", headerPrefix: "METRO TRADE VIP1", configField: "metroTradeVip1Pct", summaryHeader: "Metro Trade VIP1 AUD Inc" },
+  { key: "metroTradeVip2", label: "METRO TRADE VIP2", headerPrefix: "METRO TRADE VIP2", configField: "metroTradeVip2Pct", summaryHeader: "Metro Trade VIP2 AUD Inc" },
 ];
 
-function col(n: number): string {
-  // Convert 0-indexed column number to Excel column letter
+function colLetter(n: number): string {
   let s = "";
   let num = n;
   while (num >= 0) {
@@ -30,10 +29,7 @@ function col(n: number): string {
 
 function setCell(ws: XLSX.WorkSheet, r: number, c: number, value: string | number | undefined, fmt?: string) {
   const addr = XLSX.utils.encode_cell({ r, c });
-  if (value == null || value === "") {
-    // Leave empty
-    return;
-  }
+  if (value == null || value === "") return;
   if (typeof value === "number") {
     ws[addr] = { t: "n", v: value, z: fmt || undefined };
   } else {
@@ -60,7 +56,6 @@ interface GenerateOptions {
 }
 
 function getSpecialValue(settings: SpecialHandlingSetting[], supplierCode: string, category: string, setting: string): string | undefined {
-  // Check specific category first, then ALL
   const specific = settings.find(
     (s) => s.supplierCode === supplierCode && s.category.toLowerCase() === category.toLowerCase() && s.setting === setting
   );
@@ -74,71 +69,75 @@ function getSpecialValue(settings: SpecialHandlingSetting[], supplierCode: strin
 function generateSheet(ws: XLSX.WorkSheet, opts: GenerateOptions): void {
   const { products, supplierName, supplierCode, markups, isMosaics, gstRate, rounding, styleCodeFormat } = opts;
 
-  // ─── Column layout ───
-  // For TILES: Cost is in col Q (16), summaries start at T (19), formulas at AE (30)
-  // For MOSAICS: Q (16) = Price Per Sheet formula, S (18) = Cost per m2, summaries at V (21), formulas at AG (32)
-  const costCol = 16; // Q for both
+  const costCol = 16; // Q
   const mosaicCostM2Col = 18; // S
   const summaryStartCol = isMosaics ? 21 : 19; // V or T
   const formulaStartCol = isMosaics ? 32 : 30; // AG or AE
 
-  // ─── Headers (row 0) ───
-  const headers: [number, string][] = [
-    [0, "Category"],
-    [2, "Tier 3 Category"],
-    [3, "Description"],
-    [4, "Style Code"],
-    [5, "Supplier Code"],
-    [6, "Supplier"],
-    [7, "Stock Control"],
-    [8, ""],
-    [9, "Sqm per box"],
-    [10, "Pieces Per Sqm"],
-    [11, "Pcs/Box"],
-    [12, "m2/Pallet"],
-    [13, ""],
-    [14, "Size:"],
-    [16, isMosaics ? "Price Per Sheet Ex" : "Cost AUD Excl"],
-  ];
+  // Get a representative markup to determine percentages for headers
+  const firstMarkup = markups.find((m) => m.supplierCode === supplierCode) || markups[0];
+
+  // ─── Headers (row 0) — match done.xlsx exactly ───
+  setCell(ws, 0, 0, "Category");
+  // B empty
+  setCell(ws, 0, 2, "Tier 3 Category");
+  setCell(ws, 0, 3, "Description");
+  setCell(ws, 0, 4, "Style Code ");  // trailing space matches done.xlsx
+  setCell(ws, 0, 5, "Supplier Code");
+  setCell(ws, 0, 6, "Supplier");
+  setCell(ws, 0, 7, "Stock Control");
+  // I empty
+  setCell(ws, 0, 9, "Sqm per box");
+  setCell(ws, 0, 10, "Pieces Per Sqm");
+  setCell(ws, 0, 11, "Pcs/Box");
+  setCell(ws, 0, 12, "m2/\nPallet");  // newline matches done.xlsx
+  // N empty
+  setCell(ws, 0, 14, "Size:");
+  // P empty
+  setCell(ws, 0, costCol, isMosaics ? "Price Per Sheet Ex" : "Cost AUD Excl");
 
   if (isMosaics) {
-    headers.push([mosaicCostM2Col, "Cost Per m2 AUD Excl"]);
+    setCell(ws, 0, mosaicCostM2Col, "Cost Per m2\nAUD Excl");  // newline matches done.xlsx
   }
 
-  // Summary headers
-  const summaryLabels = TIERS.map((t) => `${t.label} AUD Incl`);
-  for (let i = 0; i < summaryLabels.length; i++) {
-    headers.push([summaryStartCol + i, summaryLabels[i]]);
+  // Summary headers — match done.xlsx exactly
+  for (let i = 0; i < TIERS.length; i++) {
+    setCell(ws, 0, summaryStartCol + i, TIERS[i].summaryHeader);
   }
 
-  // Formula block headers (5 per tier)
+  // Formula block headers — match done.xlsx exactly
   for (let t = 0; t < TIERS.length; t++) {
+    const tier = TIERS[t];
     const base = formulaStartCol + t * 5;
-    headers.push([base, `PLUS MARKUP (${TIERS[t].label})`]);
-    headers.push([base + 1, "NET PRICE"]);
-    headers.push([base + 2, "PLUS GST"]);
-    headers.push([base + 3, "SELL PRICE"]);
-    headers.push([base + 4, "ROUNDED PRICE"]);
-  }
+    const pct = firstMarkup ? (firstMarkup[tier.configField] as number) : 0;
 
-  for (const [c, label] of headers) {
-    setCell(ws, 0, c, label);
+    // First 4 tiers use "PLUS MARKUP", VIP tiers use just "MARKUP" — match done.xlsx
+    const isVipTier = t >= 4;
+    const markupHeader = isVipTier
+      ? `${tier.headerPrefix} MARKUP (${pct}%)`
+      : `${tier.headerPrefix} PLUS MARKUP (${pct}%)`;
+
+    setCell(ws, 0, base, markupHeader);
+    setCell(ws, 0, base + 1, `${tier.headerPrefix} NET PRICE`);
+    setCell(ws, 0, base + 2, `${tier.headerPrefix} PLUS GST`);
+    setCell(ws, 0, base + 3, `${tier.headerPrefix} SELL PRICE`);
+    setCell(ws, 0, base + 4, tier.roundedHeaderOverride || `${tier.headerPrefix} ROUNDED PRICE`);
   }
 
   // ─── Data rows ───
   for (let i = 0; i < products.length; i++) {
     const p = products[i];
-    const r = i + 1; // Excel row (1-indexed in the sheet, but 0-indexed in our array + 1 for header)
-    const excelRow = r + 1; // For formula references (1-indexed)
+    const r = i + 1;
+    const excelRow = r + 1; // 1-indexed for formula references
 
-    // Find the markup for this product's category
+    // Find markup for this product's category
     const markup = markups.find(
       (m) => m.supplierCode === supplierCode && m.category.toLowerCase() === p.category.toLowerCase()
     ) || markups.find(
       (m) => m.supplierCode === supplierCode
     );
 
-    // Format style code
+    // Style code: "BWA {supplier_code} {item_code}" → "BWA S3 AGG DGY36MS"
     const styleCode = styleCodeFormat
       .replace("{supplier_code}", supplierCode)
       .replace("{item_code}", p.itemCode)
@@ -146,10 +145,9 @@ function generateSheet(ws: XLSX.WorkSheet, opts: GenerateOptions): void {
 
     // Product info columns
     setCell(ws, r, 0, p.category);
-    // col 1 empty, col 2 = Tier 3 Category (hidden)
     setCell(ws, r, 3, p.description);
     setCell(ws, r, 4, styleCode);
-    setCell(ws, r, 5, p.itemCode);
+    setCell(ws, r, 5, p.itemCode);  // Column F = item code (not supplier code)
     setCell(ws, r, 6, supplierName);
     setCell(ws, r, 7, "FIFO");
 
@@ -177,10 +175,9 @@ function generateSheet(ws: XLSX.WorkSheet, opts: GenerateOptions): void {
 
     // Cost column
     if (isMosaics) {
-      // S = raw cost per m2, Q = formula =S/K (per sheet price)
       setCell(ws, r, mosaicCostM2Col, p.costPrice, MONEY_FMT);
       if (p.piecesPerSqm && p.piecesPerSqm > 0) {
-        setFormula(ws, r, costCol, `${col(mosaicCostM2Col)}${excelRow}/${col(10)}${excelRow}`, MONEY_FMT);
+        setFormula(ws, r, costCol, `S${excelRow}/K${excelRow}`, MONEY_FMT);
       } else {
         setCell(ws, r, costCol, p.costPrice, MONEY_FMT);
       }
@@ -191,53 +188,60 @@ function generateSheet(ws: XLSX.WorkSheet, opts: GenerateOptions): void {
     // ─── Formula blocks (9 tiers × 5 columns each) ───
     if (!markup) continue;
 
-    const costRef = `${col(costCol)}${excelRow}`;
-    const gstPct = gstRate / 100;
+    const costRef = `Q${excelRow}`;
+    const gstPctStr = `${gstRate}%`;
 
     for (let t = 0; t < TIERS.length; t++) {
       const tier = TIERS[t];
-      const pct = (markup[tier.configField] as number) / 100;
+      const pct = markup[tier.configField] as number;
+      const pctStr = `${pct}%`;
       const base = formulaStartCol + t * 5;
 
-      const markupCol = col(base);
-      const netCol = col(base + 1);
-      const gstCol = col(base + 2);
-      const sellCol = col(base + 3);
-      const roundedCol = col(base + 4);
+      const markupColLetter = colLetter(base);
+      const netColLetter = colLetter(base + 1);
+      const gstColLetter = colLetter(base + 2);
+      const sellColLetter = colLetter(base + 3);
+      const roundedColLetter = colLetter(base + 4);
 
-      // Step 1: Markup Amount = Cost × Markup%
-      setFormula(ws, r, base, `SUM(${costRef}*${pct})`, MONEY_FMT);
-      // Step 2: Net Price = Cost + Markup
-      setFormula(ws, r, base + 1, `SUM(${costRef}+${markupCol}${excelRow})`, MONEY_FMT);
-      // Step 3: GST = Net × GST%
-      setFormula(ws, r, base + 2, `SUM(${netCol}${excelRow}*${gstPct})`, MONEY_FMT);
-      // Step 4: Sell Price = Net + GST
-      setFormula(ws, r, base + 3, `SUM(${netCol}${excelRow}:${gstCol}${excelRow})`, MONEY_FMT);
-      // Step 5: Rounded = CEILING.MATH(Sell, rounding)
-      setFormula(ws, r, base + 4, `_xlfn.CEILING.MATH(${sellCol}${excelRow},${rounding})`, MONEY_FMT);
+      // Match done.xlsx formula patterns exactly
+      // Metro Trade (tier index 3) uses =SUM(Q2)*50% style, others use =SUM(Q2*50%)
+      if (t === 3) {
+        // Step 1: Metro Trade special pattern
+        setFormula(ws, r, base, `SUM(${costRef})*${pctStr}`, MONEY_FMT);
+      } else {
+        // Step 1: Markup Amount = =SUM(Q2*xx%)
+        setFormula(ws, r, base, `SUM(${costRef}*${pctStr})`, MONEY_FMT);
+      }
+      // Step 2: Net Price = =SUM(Q2+AE2)
+      setFormula(ws, r, base + 1, `SUM(${costRef}+${markupColLetter}${excelRow})`, MONEY_FMT);
+      // Step 3: GST = =SUM(AF2*10%)
+      setFormula(ws, r, base + 2, `SUM(${netColLetter}${excelRow}*${gstPctStr})`, MONEY_FMT);
+      // Step 4: Sell Price = =SUM(AF2:AG2)
+      setFormula(ws, r, base + 3, `SUM(${netColLetter}${excelRow}:${gstColLetter}${excelRow})`, MONEY_FMT);
+      // Step 5: Rounded = =_xlfn.CEILING.MATH(AH2,0.05)
+      setFormula(ws, r, base + 4, `_xlfn.CEILING.MATH(${sellColLetter}${excelRow},${rounding})`, MONEY_FMT);
 
-      // Summary column = reference to rounded price
-      setFormula(ws, r, summaryStartCol + t, `SUM(${roundedCol}${excelRow})`, MONEY_FMT);
+      // Summary column = =SUM(AI2)
+      setFormula(ws, r, summaryStartCol + t, `SUM(${roundedColLetter}${excelRow})`, MONEY_FMT);
     }
   }
 
   // Set sheet range
-  const maxCol = formulaStartCol + TIERS.length * 5;
-  const maxRow = products.length;
-  ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: maxRow, c: maxCol } });
+  const maxCol = formulaStartCol + TIERS.length * 5 - 1;
+  ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: products.length, c: maxCol } });
 
   // Column widths
   const colWidths: XLSX.ColInfo[] = [];
   for (let c = 0; c <= maxCol; c++) {
-    if (c === 3) colWidths.push({ wch: 45 }); // Description
-    else if (c === 4) colWidths.push({ wch: 22 }); // Style Code
-    else if (c >= summaryStartCol && c < summaryStartCol + TIERS.length) colWidths.push({ wch: 18 });
+    if (c === 3) colWidths.push({ wch: 45 });
+    else if (c === 4) colWidths.push({ wch: 22 });
+    else if (c >= summaryStartCol && c < summaryStartCol + TIERS.length) colWidths.push({ wch: 20 });
+    else if (c >= formulaStartCol) colWidths.push({ wch: 16 });
     else colWidths.push({ wch: 14 });
   }
   ws["!cols"] = colWidths;
 
-  // Hide column C (Tier 3 Category) - index 2
-  if (!ws["!cols"]) ws["!cols"] = [];
+  // Hide column C (Tier 3 Category)
   while (ws["!cols"].length <= 2) ws["!cols"].push({ wch: 14 });
   ws["!cols"][2] = { wch: 0, hidden: true };
 }
@@ -254,18 +258,16 @@ export function generateOutputWorkbook(
 ): ArrayBuffer {
   const wb = XLSX.utils.book_new();
 
-  // Get global settings
   const gstRate = parseFloat(getSpecialValue(specialHandling, supplierCode, "ALL", "gst_rate") || "10");
   const rounding = parseFloat(getSpecialValue(specialHandling, supplierCode, "ALL", "rounding") || "0.05");
-  const styleCodeFormat = getSpecialValue(specialHandling, supplierCode, "ALL", "style_code_format") || `BWA ${supplierCode} {item_code}`;
+  const styleCodeFormat = getSpecialValue(specialHandling, supplierCode, "ALL", "style_code_format") || `BWA {supplier_code} {item_code}`;
 
-  // Determine output sheets
   const outputSheetsStr = getSpecialValue(specialHandling, supplierCode, "ALL", "output_sheets");
   const outputSheetNames = outputSheetsStr
     ? outputSheetsStr.split(",").map((s) => s.trim())
     : [`${supplierName.toUpperCase()} - PRODUCTS`];
 
-  // Determine which categories are "mosaics" (need the extra columns)
+  // Determine mosaics categories
   const mosaicCategories = new Set<string>();
   for (const sh of specialHandling) {
     if (sh.supplierCode === supplierCode && sh.setting === "pricing_mode" && sh.value === "per_sheet") {
@@ -273,48 +275,23 @@ export function generateOutputWorkbook(
     }
   }
 
-  // Split products into tiles-style and mosaics-style
   const tilesProducts = products.filter((p) => !mosaicCategories.has(p.category.toLowerCase()));
   const mosaicsProducts = products.filter((p) => mosaicCategories.has(p.category.toLowerCase()));
 
-  // Generate sheets
   if (tilesProducts.length > 0) {
     const ws: XLSX.WorkSheet = {};
     const name = outputSheetNames[0] || `${supplierName.toUpperCase()} - TILES`;
-    generateSheet(ws, {
-      products: tilesProducts,
-      sheetName: name,
-      supplierName,
-      supplierCode,
-      markups,
-      specialHandling,
-      isMosaics: false,
-      gstRate,
-      rounding,
-      styleCodeFormat,
-    });
+    generateSheet(ws, { products: tilesProducts, sheetName: name, supplierName, supplierCode, markups, specialHandling, isMosaics: false, gstRate, rounding, styleCodeFormat });
     XLSX.utils.book_append_sheet(wb, ws, name.substring(0, 31));
   }
 
   if (mosaicsProducts.length > 0) {
     const ws: XLSX.WorkSheet = {};
     const name = outputSheetNames[1] || "MOSAICS";
-    generateSheet(ws, {
-      products: mosaicsProducts,
-      sheetName: name,
-      supplierName,
-      supplierCode,
-      markups,
-      specialHandling,
-      isMosaics: true,
-      gstRate,
-      rounding,
-      styleCodeFormat,
-    });
+    generateSheet(ws, { products: mosaicsProducts, sheetName: name, supplierName, supplierCode, markups, specialHandling, isMosaics: true, gstRate, rounding, styleCodeFormat });
     XLSX.utils.book_append_sheet(wb, ws, name.substring(0, 31));
   }
 
-  // If no products at all, create an empty sheet
   if (tilesProducts.length === 0 && mosaicsProducts.length === 0) {
     const ws: XLSX.WorkSheet = { "!ref": "A1", A1: { t: "s", v: "No products found" } };
     XLSX.utils.book_append_sheet(wb, ws, "No Data");
