@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import * as XLSX from "xlsx";
 import { createClient } from "@supabase/supabase-js";
-import { calculatePrices } from "@/lib/pricing";
-import { cleanPriceString } from "@/lib/xlsx-utils";
-import { uploadToR2, buildR2Key, slugify, formatDateForFilename, formatDateForR2 } from "@/lib/r2";
-import type { Supplier, GstExemptionKeyword, ColumnMapping } from "@/lib/types";
+import { parseConfigFile } from "@/lib/config-parser";
+import { parseSourceFile } from "@/lib/source-parser";
+import { classifyProduct } from "@/lib/category-classifier";
+import { generateOutputWorkbook } from "@/lib/output-generator";
+import { uploadToR2, slugify, formatDateForFilename, formatDateForR2 } from "@/lib/r2";
+import type { ClassifiedProduct, ColumnMapping } from "@/lib/types";
 
 function getSupabaseClient() {
   return createClient(
@@ -13,257 +14,148 @@ function getSupabaseClient() {
   );
 }
 
-function getColumnIndex(headers: string[], columnName: string | null): number {
-  if (!columnName) return -1;
-  const idx = headers.indexOf(columnName);
-  if (idx !== -1) return idx;
-  return headers.findIndex((h) => h.toLowerCase() === columnName.toLowerCase());
-}
-
-function getCellValue(row: (string | number | boolean | undefined)[], headers: string[], columnName: string | null): string {
-  if (!columnName) return "";
-  const idx = getColumnIndex(headers, columnName);
-  if (idx === -1) return "";
-  return row[idx] != null ? String(row[idx]) : "";
-}
-
-function unmergeCells(sheet: XLSX.WorkSheet): void {
-  const merges = sheet["!merges"];
-  if (!merges) return;
-  for (const merge of merges) {
-    const topLeftAddr = XLSX.utils.encode_cell({ r: merge.s.r, c: merge.s.c });
-    const topLeftCell = sheet[topLeftAddr];
-    if (!topLeftCell) continue;
-    for (let r = merge.s.r; r <= merge.e.r; r++) {
-      for (let c = merge.s.c; c <= merge.e.c; c++) {
-        if (r === merge.s.r && c === merge.s.c) continue;
-        sheet[XLSX.utils.encode_cell({ r, c })] = { ...topLeftCell };
-      }
-    }
-  }
-}
-
-interface ProcessResult {
-  outputRows: (string | number | undefined)[][];
-  headers: string[];
-  skippedCount: number;
-  productIndexRows: {
-    original_code: string;
-    bwa_code: string;
-    description: string;
-    brand: string;
-    original_price: number;
-    regular_price: number;
-    vip_price: number;
-  }[];
-}
-
-function processSheet(
-  sheet: XLSX.WorkSheet,
-  supplier: Supplier,
-  exemptionKeywords: GstExemptionKeyword[],
-  mapping: ColumnMapping
-): ProcessResult {
-  unmergeCells(sheet);
-  const range = XLSX.utils.decode_range(sheet["!ref"] || "A1");
-
-  // Extract headers
-  const headers: string[] = [];
-  for (let col = range.s.c; col <= range.e.c; col++) {
-    const cell = sheet[XLSX.utils.encode_cell({ r: range.s.r, c: col })];
-    headers.push(cell ? String(cell.v) : XLSX.utils.encode_col(col));
-  }
-
-  const outputRows: (string | number | undefined)[][] = [];
-  const productIndexRows: ProcessResult["productIndexRows"] = [];
-  let skippedCount = 0;
-  const BATCH_SIZE = 500;
-
-  for (let startRow = range.s.r + 1; startRow <= range.e.r; startRow += BATCH_SIZE) {
-    const endRow = Math.min(startRow + BATCH_SIZE - 1, range.e.r);
-
-    for (let r = startRow; r <= endRow; r++) {
-      // Skip hidden rows
-      if (sheet["!rows"]?.[r]?.hidden) continue;
-
-      // Read full row preserving all columns
-      const row: (string | number | boolean | undefined)[] = [];
-      let allEmpty = true;
-      for (let col = range.s.c; col <= range.e.c; col++) {
-        const cell = sheet[XLSX.utils.encode_cell({ r, c: col })];
-        const val = cell ? cell.v : undefined;
-        if (val != null && String(val).trim()) allEmpty = false;
-        row.push(val);
-      }
-
-      // Skip fully empty rows silently
-      if (allEmpty) continue;
-
-      const costRaw = getCellValue(row, headers, mapping.cost);
-      const { value: costPrice } = cleanPriceString(costRaw);
-
-      if (costPrice === null || costPrice <= 0) {
-        skippedCount++;
-        continue;
-      }
-
-      const productId = getCellValue(row, headers, mapping.id);
-      if (!productId.trim()) {
-        skippedCount++;
-        continue;
-      }
-
-      const description = getCellValue(row, headers, mapping.description);
-      const brand = getCellValue(row, headers, mapping.brand);
-
-      const rowData: Record<string, string> = {};
-      for (const [field, columnName] of Object.entries(mapping)) {
-        if (columnName) rowData[field] = getCellValue(row, headers, columnName);
-      }
-
-      const { regularPrice, vipPrice } = calculatePrices(costPrice, supplier, rowData, exemptionKeywords);
-
-      // Output row = all original columns + 3 BWA columns
-      const originalValues = row.map((v) =>
-        typeof v === "boolean" ? String(v) : v
-      );
-      outputRows.push([...originalValues, `BWA-${productId}`, regularPrice, vipPrice]);
-
-      productIndexRows.push({
-        original_code: productId,
-        bwa_code: `BWA-${productId}`,
-        description,
-        brand,
-        original_price: costPrice,
-        regular_price: regularPrice,
-        vip_price: vipPrice,
-      });
-    }
-  }
-
-  return { outputRows, headers, skippedCount, productIndexRows };
-}
-
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File;
-    const supplierId = formData.get("supplierId") as string;
-    const sheetName = formData.get("sheetName") as string | null;
-    const processAllTabs = formData.get("processAllTabs") === "true";
+    const supplierCode = formData.get("supplierCode") as string;
 
-    if (!file || !supplierId) {
-      return NextResponse.json({ error: "Missing file or supplierId" }, { status: 400 });
+    // Optional: manual column mapping override (JSON string)
+    const manualMappingStr = formData.get("columnMapping") as string | null;
+
+    if (!file || !supplierCode) {
+      return NextResponse.json({ error: "Missing file or supplier code" }, { status: 400 });
     }
 
+    // Load config from Supabase
     const supabase = getSupabaseClient();
-    const [supplierRes, keywordsRes] = await Promise.all([
-      supabase.from("suppliers").select("*").eq("id", supplierId).single(),
-      supabase.from("gst_exemption_keywords").select("*").eq("supplier_id", supplierId),
-    ]);
+    const { data: configData } = await supabase
+      .from("active_config")
+      .select("config_json")
+      .order("uploaded_at", { ascending: false })
+      .limit(1)
+      .single();
 
-    if (supplierRes.error || !supplierRes.data) {
-      return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
+    if (!configData) {
+      return NextResponse.json({ error: "No config file uploaded. Please upload a config first." }, { status: 400 });
     }
 
-    const supplier: Supplier = supplierRes.data;
-    const exemptionKeywords: GstExemptionKeyword[] = keywordsRes.data || [];
-    const mapping: ColumnMapping = supplier.column_mapping;
-    const supplierSlug = slugify(supplier.name);
-    const dateStr = formatDateForFilename();
+    const config = parseConfigFile(
+      // Re-parse from stored JSON by creating a minimal structure
+      // Actually, the config_json stores the parsed result directly
+      new ArrayBuffer(0) // placeholder
+    );
+    // Use stored parsed config instead
+    const parsedConfig = JSON.parse(configData.config_json);
 
+    // Get supplier-specific config
+    const supplierMarkups = parsedConfig.markups.filter(
+      (m: { supplierCode: string }) => m.supplierCode === supplierCode
+    );
+
+    if (supplierMarkups.length === 0) {
+      return NextResponse.json({ error: `No markup configuration found for supplier code "${supplierCode}"` }, { status: 404 });
+    }
+
+    const supplierName = supplierMarkups[0].supplierName;
+
+    // Get column mapping (from config or manual override)
+    let columnMapping: ColumnMapping;
+    if (manualMappingStr) {
+      columnMapping = JSON.parse(manualMappingStr);
+    } else {
+      const configMapping = parsedConfig.columnMappings?.find(
+        (m: { supplierCode: string }) => m.supplierCode === supplierCode
+      );
+      if (!configMapping) {
+        return NextResponse.json({
+          error: `No column mapping found for supplier "${supplierCode}". Please provide column mapping.`,
+          needsMapping: true,
+        }, { status: 400 });
+      }
+      columnMapping = configMapping;
+    }
+
+    // Get category rules and special handling
+    const categoryRules = (parsedConfig.categoryRules || []).filter(
+      (r: { supplierCode: string }) => r.supplierCode === supplierCode
+    );
+    const specialHandling = (parsedConfig.specialHandling || []).filter(
+      (s: { supplierCode: string }) => s.supplierCode === supplierCode
+    );
+
+    // Parse source file
     const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: "array", cellDates: true, raw: true });
+    const products = parseSourceFile(buffer, columnMapping);
 
-    const outputWorkbook = XLSX.utils.book_new();
-    let totalRows = 0;
-    let totalSkipped = 0;
-    const allProductIndexRows: ProcessResult["productIndexRows"] = [];
-
-    const sheetsToProcess = processAllTabs
-      ? workbook.SheetNames
-      : [sheetName || workbook.SheetNames[0]];
-
-    for (const sName of sheetsToProcess) {
-      const sheet = workbook.Sheets[sName];
-      if (!sheet) continue;
-
-      const result = processSheet(sheet, supplier, exemptionKeywords, mapping);
-
-      // Build output header row: original headers + BWA columns
-      const outputHeaders = [...result.headers, "BWA Code", "BWA Regular Customer Price", "BWA VIP Customer Price"];
-      const outputData = [outputHeaders, ...result.outputRows];
-      const outputSheet = XLSX.utils.aoa_to_sheet(outputData);
-
-      // Set column widths
-      const cols = result.headers.map(() => ({ wch: 16 }));
-      cols.push({ wch: 20 }, { wch: 24 }, { wch: 22 });
-      outputSheet["!cols"] = cols;
-
-      const tabName = processAllTabs ? sName : "Processed";
-      XLSX.utils.book_append_sheet(outputWorkbook, outputSheet, tabName.substring(0, 31));
-
-      totalRows += result.outputRows.length;
-      totalSkipped += result.skippedCount;
-      allProductIndexRows.push(...result.productIndexRows);
+    if (products.length === 0) {
+      return NextResponse.json({ error: "No valid products found in the uploaded file" }, { status: 400 });
     }
 
-    const xlsxBuffer = XLSX.write(outputWorkbook, { type: "buffer", bookType: "xlsx" });
+    // Classify products
+    const classified: ClassifiedProduct[] = products.map((product) => {
+      const category = classifyProduct(product, categoryRules);
+      const defaultCategory = supplierMarkups[0]?.category || "Products";
+
+      // Determine pricing mode from special handling
+      const cat = category || defaultCategory;
+      let pricingMode = "per_sqm";
+      const modeSettingSpecific = specialHandling.find(
+        (s: { category: string; setting: string }) => s.category.toLowerCase() === cat.toLowerCase() && s.setting === "pricing_mode"
+      );
+      const modeSettingAll = specialHandling.find(
+        (s: { category: string; setting: string }) => s.category === "ALL" && s.setting === "pricing_mode"
+      );
+
+      if (modeSettingSpecific) pricingMode = modeSettingSpecific.value;
+      else if (modeSettingAll) pricingMode = modeSettingAll.value;
+
+      // Check unit override (e.g. PCE items on tiles sheet get per_piece)
+      const unitOverride = specialHandling.find(
+        (s: { category: string; setting: string }) =>
+          s.category.toLowerCase() === cat.toLowerCase() &&
+          s.setting === `unit_override_${product.unit}`
+      );
+      if (unitOverride) pricingMode = unitOverride.value;
+
+      return { ...product, category: cat, pricingMode };
+    });
+
+    // Generate output workbook
+    const outputBuffer = generateOutputWorkbook(
+      classified,
+      supplierName,
+      supplierCode,
+      supplierMarkups,
+      specialHandling
+    );
+
+    const supplierSlug = slugify(supplierName);
+    const dateStr = formatDateForFilename();
     const outputFilename = `${supplierSlug}-${dateStr}.xlsx`;
 
-    // Store in R2 and record history
+    // Store output in R2 and record history
     try {
       const dateR2 = formatDateForR2();
-      const originalKey = buildR2Key(supplierId, dateR2, `original-${supplierSlug}-${dateStr}.xlsx`);
-      const processedKey = buildR2Key(supplierId, dateR2, `processed-${supplierSlug}-${dateStr}.xlsx`);
+      const outputKey = `outputs/${supplierCode}/${dateR2}/${outputFilename}`;
+      const outputUrl = await uploadToR2(
+        outputKey,
+        Buffer.from(outputBuffer),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
 
-      const originalBuffer = Buffer.from(buffer);
-      const processedBuffer = Buffer.from(xlsxBuffer);
-
-      const [originalUrl, processedUrl] = await Promise.all([
-        uploadToR2(originalKey, originalBuffer, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-        uploadToR2(processedKey, processedBuffer, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-      ]);
-
-      // Save processing history
-      const { data: historyEntry } = await supabase
-        .from("processing_history")
-        .insert({
-          supplier_id: supplierId,
-          original_file_url: originalUrl,
-          processed_file_url: processedUrl,
-          original_filename: file.name,
-          row_count: totalRows,
-          skipped_rows: totalSkipped,
-        })
-        .select("id")
-        .single();
-
-      // Save product index entries in batches
-      if (historyEntry && allProductIndexRows.length > 0) {
-        const INDEX_BATCH = 500;
-        for (let i = 0; i < allProductIndexRows.length; i += INDEX_BATCH) {
-          const batch = allProductIndexRows.slice(i, i + INDEX_BATCH).map((p) => ({
-            supplier_id: supplierId,
-            processing_history_id: historyEntry.id,
-            supplier_name: supplier.name,
-            original_code: p.original_code,
-            bwa_code: p.bwa_code,
-            description: p.description,
-            brand: p.brand,
-            original_price: p.original_price,
-            regular_price: p.regular_price,
-            vip_price: p.vip_price,
-          }));
-          await supabase.from("product_index").insert(batch);
-        }
-      }
-    } catch (r2Error) {
-      // R2 storage is non-blocking — log but don't fail the download
-      console.error("R2/history storage error:", r2Error);
+      await supabase.from("processing_history").insert({
+        supplier_code: supplierCode,
+        supplier_name: supplierName,
+        original_filename: file.name,
+        output_file_url: outputUrl,
+        row_count: classified.length,
+      });
+    } catch (r2Err) {
+      console.error("R2/history storage error:", r2Err);
     }
 
-    return new NextResponse(xlsxBuffer, {
+    return new NextResponse(outputBuffer, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="${outputFilename}"`,
@@ -271,6 +163,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     console.error("Processing error:", err);
-    return NextResponse.json({ error: "Processing failed" }, { status: 500 });
+    return NextResponse.json({ error: "Processing failed: " + (err instanceof Error ? err.message : "Unknown error") }, { status: 500 });
   }
 }

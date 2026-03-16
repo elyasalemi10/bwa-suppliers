@@ -7,11 +7,9 @@ import { Toaster } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Suppliers" },
+  { href: "/", label: "Dashboard" },
   { href: "/process", label: "Process" },
-  { href: "/batch", label: "Batch" },
-  { href: "/search", label: "Search" },
-  { href: "/export", label: "Export" },
+  { href: "/config", label: "Config" },
 ];
 
 export default function AppShell({ children }: { children: ReactNode }) {
@@ -55,7 +53,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 {NAV_ITEMS.map((item) => {
                   const isActive =
                     item.href === "/"
-                      ? pathname === "/" || pathname.startsWith("/suppliers")
+                      ? pathname === "/"
                       : pathname.startsWith(item.href);
                   return (
                     <Link key={item.href} href={item.href}>
