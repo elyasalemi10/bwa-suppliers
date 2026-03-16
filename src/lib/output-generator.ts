@@ -258,19 +258,28 @@ function buildSheet(ws: ExcelJS.Worksheet, opts: SheetOpts): void {
     const row = ws.getRow(r);
     row.font = CALIBRI;
 
+    const ALL_BORDERS = { top: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER, right: THIN_BORDER };
+
     // Product info
     ws.getCell(r, C.A).value = p.category;
-    ws.getCell(r, C.D).value = p.description;
-    ws.getCell(r, C.D).fill = WHITE_FILL;
-    ws.getCell(r, C.D).border = { top: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER, right: THIN_BORDER };
-    ws.getCell(r, C.D).alignment = { horizontal: "left", vertical: "top" };
 
-    ws.getCell(r, C.E).value = styleCode;
-    ws.getCell(r, C.E).fill = WHITE_FILL;
-    ws.getCell(r, C.E).alignment = { horizontal: "left", vertical: "top" };
+    const dCell = ws.getCell(r, C.D);
+    dCell.value = p.description;
+    dCell.fill = WHITE_FILL;
+    dCell.border = ALL_BORDERS;
+    dCell.alignment = { horizontal: "left", vertical: "top" };
 
-    ws.getCell(r, C.F).value = p.itemCode;
-    ws.getCell(r, C.F).alignment = { horizontal: "left", vertical: "top" };
+    const eCell = ws.getCell(r, C.E);
+    eCell.value = styleCode;
+    eCell.fill = WHITE_FILL;
+    eCell.border = ALL_BORDERS;
+    eCell.alignment = { horizontal: "left", vertical: "top" };
+
+    const fCell = ws.getCell(r, C.F);
+    fCell.value = p.itemCode;
+    fCell.fill = WHITE_FILL;
+    fCell.border = ALL_BORDERS;
+    fCell.alignment = { horizontal: "left", vertical: "top" };
 
     ws.getCell(r, C.G).value = supplierName;
     ws.getCell(r, C.H).value = "FIFO";
@@ -291,24 +300,38 @@ function buildSheet(ws: ExcelJS.Worksheet, opts: SheetOpts): void {
       ws.getCell(r, C.N).value = "Price Per SQM";
     }
 
-    // Numeric columns with white fill
-    const m2Box = p.m2Box;
-    if (m2Box != null) { ws.getCell(r, C.J).value = m2Box; ws.getCell(r, C.J).fill = WHITE_FILL; }
+    // Numeric columns — always white fill + thin borders (even when empty)
+    const jCell = ws.getCell(r, C.J);
+    if (p.m2Box != null) jCell.value = p.m2Box;
+    jCell.fill = WHITE_FILL;
+    jCell.border = ALL_BORDERS;
 
-    // Pieces Per Sqm (K) — for mosaics, look up from table
+    const kCell = ws.getCell(r, C.K);
     const ppsVal = isMosaics ? (MOSAIC_PCS_PER_SQM[p.itemCode] || p.piecesPerSqm) : p.piecesPerSqm;
-    if (ppsVal != null) { ws.getCell(r, C.K).value = ppsVal; ws.getCell(r, C.K).fill = WHITE_FILL; }
+    if (ppsVal != null) kCell.value = ppsVal;
+    kCell.fill = WHITE_FILL;
+    kCell.border = ALL_BORDERS;
 
-    if (p.pcsBox != null) { ws.getCell(r, C.L).value = p.pcsBox; ws.getCell(r, C.L).fill = WHITE_FILL; }
-    if (p.m2Pallet != null) { ws.getCell(r, C.M).value = p.m2Pallet; ws.getCell(r, C.M).fill = WHITE_FILL; }
+    const lCell = ws.getCell(r, C.L);
+    if (p.pcsBox != null) lCell.value = p.pcsBox;
+    lCell.fill = WHITE_FILL;
+    lCell.border = ALL_BORDERS;
+
+    const mCell = ws.getCell(r, C.M);
+    if (p.m2Pallet != null) mCell.value = p.m2Pallet;
+    mCell.fill = WHITE_FILL;
+    mCell.border = ALL_BORDERS;
 
     ws.getCell(r, C.O).value = extractSize(p.description);
 
     // Cost column
     const costCell = ws.getCell(r, C.Q);
     if (isMosaics) {
-      ws.getCell(r, C.S).value = p.costPrice;
-      ws.getCell(r, C.S).numFmt = MONEY_FMT;
+      const sCell = ws.getCell(r, C.S);
+      sCell.value = p.costPrice;
+      sCell.numFmt = MONEY_FMT;
+      sCell.fill = WHITE_FILL;
+      sCell.border = ALL_BORDERS;
       costCell.value = { formula: `S${r}/K${r}` } as ExcelJS.CellFormulaValue;
     } else {
       costCell.value = p.costPrice;
@@ -317,7 +340,7 @@ function buildSheet(ws: ExcelJS.Worksheet, opts: SheetOpts): void {
     costCell.font = BOLD_CALIBRI;
     costCell.fill = WHITE_FILL;
     costCell.alignment = { horizontal: "center", vertical: "middle" };
-    costCell.border = { left: THIN_BORDER, right: THIN_BORDER, bottom: THIN_BORDER };
+    costCell.border = ALL_BORDERS;
 
     if (!markup) continue;
 
@@ -384,8 +407,9 @@ function buildSheet(ws: ExcelJS.Worksheet, opts: SheetOpts): void {
     }
   }
 
-  // Freeze panes at A2
-  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 1, topLeftCell: "A2", activeCell: "A2" }];
+  // Freeze panes at A2 with correct zoom
+  const zoom = isMosaics ? 90 : 80;
+  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 1, topLeftCell: "A2", activeCell: "A2", zoomScale: zoom, zoomScaleNormal: zoom }];
 }
 
 export async function generateOutputWorkbook(
@@ -419,21 +443,26 @@ export async function generateOutputWorkbook(
 
   const sheetOpts = { supplierName, supplierCode, markups, specialHandling, gstRate, rounding, styleCodeFormat };
 
+  const protectOpts = { sheet: true, objects: true, scenarios: true, selectLockedCells: false, selectUnlockedCells: false };
+
   if (tilesProducts.length > 0) {
     const name = (outputSheetNames[0] || `${supplierName.toUpperCase()} - TILES`).substring(0, 31);
     const ws = wb.addWorksheet(name);
     buildSheet(ws, { ...sheetOpts, products: tilesProducts, isMosaics: false });
+    await ws.protect("bwa", protectOpts);
   }
 
   if (mosaicsProducts.length > 0) {
     const name = (outputSheetNames[1] || "MOSAICS").substring(0, 31);
     const ws = wb.addWorksheet(name);
     buildSheet(ws, { ...sheetOpts, products: mosaicsProducts, isMosaics: true });
+    await ws.protect("bwa", protectOpts);
   }
 
   if (tilesProducts.length === 0 && mosaicsProducts.length === 0) {
     const ws = wb.addWorksheet("No Data");
     ws.getCell("A1").value = "No products found";
+    await ws.protect("bwa", protectOpts);
   }
 
   return Buffer.from(await wb.xlsx.writeBuffer());
