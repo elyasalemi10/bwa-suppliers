@@ -15,7 +15,7 @@ const MOSAIC_PCS_PER_SQM: Record<string, number> = {
   "DEC FORCAR":13.1578,"DEC FORNER":13.1578,"DEC HERCAR":11.1111,"DEC HERNER":10.5263,
   "DEC PYRCAR":10.5263,"DEC PYRNER":10.5263,
   "FGR BEI214G":11.3,"FGR DBL214G":11.3,"FGR GRN214G":11.3,"FGR LBL214G":11.2599,
-  "FGR LGY214G":11.3,"FGR PLGY214M":11.3208,"FGR PWHT214M":11.3208,"FGR TER214G":11.3,"FGR WHT214G":11.3,
+  "FGR LGY214G":11.3,"FGR PBLK214M":11.3208,"FGR PLGY214M":11.3208,"FGR PWHT214M":11.3208,"FGR TER214G":11.3,"FGR WHT214G":11.3,
   "PMC BLK214G":11.26,"PMC BLK214M":11.26,"PMC WHT1514M":11.3798,"PMC WHT214G":11.26,"PMC WHT214M":11.26,
   "PRD GRA30HEX":12.4194,"PRD GRY30HEX":12.4194,"PRD LGY30HEX":12.4194,
   "TSC CAR30N":10.984,"TSC CAR75N":10.984,"TSC CARCHN":12.9955,"TSC CARLHN":12.3266,
@@ -56,7 +56,21 @@ const C = {
 const CALIBRI: Partial<ExcelJS.Font> = { name: "Calibri", size: 11 };
 const BOLD_CALIBRI: Partial<ExcelJS.Font> = { name: "Calibri", size: 11, bold: true };
 const GREEN_BOLD: Partial<ExcelJS.Font> = { name: "Calibri", size: 11, bold: true, color: { argb: "FF00B050" } };
+const PURPLE_BOLD: Partial<ExcelJS.Font> = { name: "Calibri", size: 11, bold: true, color: { argb: "FF7030A0" } };
 const MONEY_FMT = '"$"#,##0.00';
+
+// Rich text helpers for NET PRICE headers
+const RT_BOLD = { bold: true, size: 11, name: "Calibri" };
+function netPriceRichText(prefix: string, isMetro: boolean): ExcelJS.CellRichTextValue {
+  const priceColor = isMetro ? "FF7030A0" : "FF00B050";
+  return {
+    richText: [
+      { text: prefix + " ", font: { ...RT_BOLD } },
+      { text: "NET", font: { ...RT_BOLD, color: { argb: "FFFF0000" } } },
+      { text: " PRICE", font: { ...RT_BOLD, color: { argb: priceColor } } },
+    ],
+  };
+}
 
 const LIGHT_GREEN_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2EFDA" } };
 const LIGHT_PURPLE_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFCCCCFF" } };
@@ -162,37 +176,69 @@ function buildSheet(ws: ExcelJS.Worksheet, opts: SheetOpts): void {
     cell.value = TIERS[i].summaryHeader;
   }
 
-  // Formula block headers
+  // Formula block headers with correct bold/rich-text patterns
+  const maxCol = formulaStart + TIERS.length * 5;
   for (let t = 0; t < TIERS.length; t++) {
     const tier = TIERS[t];
     const pct = firstMarkup ? (firstMarkup[tier.configField] as number) : 0;
     const base = formulaStart + t * 5; // 0-indexed
+    const isMainTier = t < 4; // first 4 are main, rest are VIP
+    const isMetro = t === 2 || t === 3; // Metro Retail, Metro Trade
 
+    // Col 1: MARKUP header — always bold
     const markupLabel = tier.isPlus
       ? `${tier.headerPrefix} PLUS MARKUP (${pct}%)`
       : `${tier.headerPrefix} MARKUP (${pct}%)`;
+    const mkHeader = ws.getCell(1, base + 1);
+    mkHeader.value = markupLabel;
+    mkHeader.font = BOLD_CALIBRI;
+    mkHeader.alignment = { wrapText: true, vertical: "bottom" };
 
-    ws.getCell(1, base + 1).value = markupLabel;
-    ws.getCell(1, base + 2).value = `${tier.headerPrefix} NET PRICE`;
-    ws.getCell(1, base + 3).value = `${tier.headerPrefix} PLUS GST`;
-    ws.getCell(1, base + 4).value = `${tier.headerPrefix} SELL PRICE`;
-    ws.getCell(1, base + 5).value = tier.roundedOverride || `${tier.headerPrefix} ROUNDED PRICE`;
+    // Col 2: NET PRICE header — rich text for main tiers, plain not-bold for VIP
+    const ntHeader = ws.getCell(1, base + 2);
+    if (isMainTier) {
+      ntHeader.value = netPriceRichText(tier.headerPrefix, isMetro);
+    } else {
+      ntHeader.value = `${tier.headerPrefix} NET PRICE`;
+      ntHeader.font = CALIBRI; // not bold for VIP
+    }
+    ntHeader.alignment = { wrapText: true, vertical: "bottom" };
+
+    // Cols 3-5: GST, SELL, ROUNDED — never bold
+    const gsHeader = ws.getCell(1, base + 3);
+    gsHeader.value = `${tier.headerPrefix} PLUS GST`;
+    gsHeader.font = CALIBRI;
+    gsHeader.alignment = { wrapText: true, vertical: "bottom" };
+
+    const slHeader = ws.getCell(1, base + 4);
+    slHeader.value = `${tier.headerPrefix} SELL PRICE`;
+    slHeader.font = CALIBRI;
+    slHeader.alignment = { wrapText: true, vertical: "bottom" };
+
+    const rdHeader = ws.getCell(1, base + 5);
+    rdHeader.value = tier.roundedOverride || `${tier.headerPrefix} ROUNDED PRICE`;
+    rdHeader.font = CALIBRI;
+    rdHeader.alignment = { wrapText: true, vertical: "bottom" };
   }
 
-  // Style ALL header cells
-  const maxCol = formulaStart + TIERS.length * 5;
-  for (let c = 1; c <= maxCol; c++) {
+  // Style product-info header cells (A through S area) — all bold
+  const infoColEnd = isMosaics ? 19 : 17; // up to S or Q
+  for (let c = 1; c <= infoColEnd; c++) {
     const cell = ws.getCell(1, c);
-    cell.font = BOLD_CALIBRI;
-    cell.alignment = { wrapText: true, vertical: "bottom" };
+    if (!cell.font || !cell.value) cell.font = BOLD_CALIBRI;
+    else if (!cell.font.bold) cell.font = BOLD_CALIBRI;
+    cell.alignment = { ...cell.alignment, wrapText: true, vertical: "bottom" };
   }
 
-  // Summary header fills
+  // Summary header fills and bold pattern
   for (let i = 0; i < TIERS.length; i++) {
     const colNum = summaryStart + i + 1;
     const cell = ws.getCell(1, colNum);
-    if (i === 0 || i === 1) cell.fill = LIGHT_GREEN_FILL;  // T,U / V,W → Regional Retail/Trade
-    else if (i === 2 || i === 3) cell.fill = LIGHT_PURPLE_FILL; // V,W / X,Y → Metro Retail/Trade
+    const isMainTier = i < 4;
+    cell.font = isMainTier ? BOLD_CALIBRI : CALIBRI; // main tiers bold, VIP not bold
+    cell.alignment = { wrapText: true, vertical: "bottom" };
+    if (i === 0 || i === 1) cell.fill = LIGHT_GREEN_FILL;
+    else if (i === 2 || i === 3) cell.fill = LIGHT_PURPLE_FILL;
   }
 
   // ─── Data rows ───
@@ -284,6 +330,8 @@ function buildSheet(ws: ExcelJS.Worksheet, opts: SheetOpts): void {
       const pct = markup[tier.configField] as number;
       const pctStr = `${pct}%`;
       const base = formulaStart + t * 5; // 0-indexed
+      const isMainTier = t < 4;
+      const isMetro = t === 2 || t === 3;
 
       const mkCol = colLetter(base);
       const ntCol = colLetter(base + 1);
@@ -298,13 +346,17 @@ function buildSheet(ws: ExcelJS.Worksheet, opts: SheetOpts): void {
       const mkCell = ws.getCell(r, base + 1);
       mkCell.value = { formula: mkFormula } as ExcelJS.CellFormulaValue;
       mkCell.numFmt = MONEY_FMT;
-      mkCell.font = BOLD_CALIBRI;
+      mkCell.font = BOLD_CALIBRI; // markup data is always bold
 
-      // Step 2: Net Price
+      // Step 2: Net Price — green for Regional (0,1), purple for Metro (2,3), default for VIP
       const ntCell = ws.getCell(r, base + 2);
       ntCell.value = { formula: `SUM(${costRef}+${mkCol}${r})` } as ExcelJS.CellFormulaValue;
       ntCell.numFmt = MONEY_FMT;
-      ntCell.font = GREEN_BOLD;
+      if (isMainTier) {
+        ntCell.font = isMetro ? PURPLE_BOLD : GREEN_BOLD;
+      } else {
+        ntCell.font = CALIBRI; // VIP net price: default, not bold
+      }
 
       // Step 3: GST
       const gsCell = ws.getCell(r, base + 3);
