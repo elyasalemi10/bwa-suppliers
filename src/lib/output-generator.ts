@@ -137,11 +137,13 @@ function generateSheet(ws: XLSX.WorkSheet, opts: GenerateOptions): void {
       (m) => m.supplierCode === supplierCode
     );
 
-    // Style code: "BWA {supplier_code} {item_code}" → "BWA S3 AGG DGY36MS"
+    // Config format: "BWA {code} {supplier_code}"
+    // In this context: {code} = supplier code (S3), {supplier_code} = item code
+    // Result: "BWA S3 AGG DGY36MS"
     const styleCode = styleCodeFormat
-      .replace("{supplier_code}", supplierCode)
-      .replace("{item_code}", p.itemCode)
-      .replace("{code}", supplierCode);
+      .replace("{code}", supplierCode)
+      .replace("{supplier_code}", p.itemCode)
+      .replace("{item_code}", p.itemCode);
 
     // Product info columns
     setCell(ws, r, 0, p.category);
@@ -175,12 +177,9 @@ function generateSheet(ws: XLSX.WorkSheet, opts: GenerateOptions): void {
 
     // Cost column
     if (isMosaics) {
+      // S = raw cost per m2, Q = formula =S/K (always a formula, even if K is blank)
       setCell(ws, r, mosaicCostM2Col, p.costPrice, MONEY_FMT);
-      if (p.piecesPerSqm && p.piecesPerSqm > 0) {
-        setFormula(ws, r, costCol, `S${excelRow}/K${excelRow}`, MONEY_FMT);
-      } else {
-        setCell(ws, r, costCol, p.costPrice, MONEY_FMT);
-      }
+      setFormula(ws, r, costCol, `S${excelRow}/K${excelRow}`, MONEY_FMT);
     } else {
       setCell(ws, r, costCol, p.costPrice, MONEY_FMT);
     }
