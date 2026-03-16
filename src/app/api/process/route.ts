@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Generate output workbook
-    const outputBuffer = generateOutputWorkbook(
+    const outputBuffer = await generateOutputWorkbook(
       classified,
       supplierName,
       supplierCode,
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
       console.error("R2/history storage error:", r2Err);
     }
 
-    return new NextResponse(outputBuffer, {
+    return new NextResponse(new Uint8Array(outputBuffer), {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="${outputFilename}"`,
